@@ -1,0 +1,411 @@
+let song;
+
+let notes = [];
+
+let score = 0;
+let combo = 0;
+
+let roadOffset = 0;
+
+// BPM
+let bpm = 120;
+
+let beatTime;
+
+let lastBeat = -1;
+
+// 패턴
+let beatPattern = [
+  1, // 한 번
+  1,
+  2, // 두 번 연속
+  1,
+  0, // 쉼
+  2,
+  1,
+  1
+];
+
+let patternIndex = 0;
+
+// =========================
+// 스페이스 스크롤 막기
+// =========================
+
+window.addEventListener("keydown", function(e) {
+
+  if (e.code === "Space") {
+
+    e.preventDefault();
+
+  }
+
+});
+
+// =========================
+// 음악
+// =========================
+
+function preload() {
+
+  song = loadSound("music.mp3");
+
+}
+
+// =========================
+// 시작
+// =========================
+
+function setup() {
+
+  createCanvas(windowWidth, windowHeight);
+
+  beatTime = 60 / bpm;
+
+  userStartAudio();
+
+  song.play();
+
+}
+
+// =========================
+// 메인
+// =========================
+
+function draw() {
+
+  background(15, 20, 15);
+
+  drawForest();
+
+  drawRoad();
+
+  drawTarget();
+
+  drawUI();
+
+  spawnByBeat();
+
+  updateNotes();
+
+}
+
+// =========================
+// 숲 배경
+// =========================
+
+function drawForest() {
+
+  noStroke();
+
+  // 수풀
+  for (let i = 0; i < width; i += 60) {
+
+    fill(20, random(60, 100), 30);
+
+    ellipse(i, height - 20, 120, 80);
+
+  }
+
+  // 나무
+  for (let x = 0; x < width; x += 150) {
+
+    fill(70, 40, 20);
+
+    rect(x, height - 260, 25, 260);
+
+    fill(30, 120, 40);
+
+    ellipse(x + 12, height - 280, 120, 120);
+
+  }
+
+}
+
+// =========================
+// 길
+// =========================
+
+function drawRoad() {
+
+  roadOffset += 14;
+
+  stroke(90);
+
+  strokeWeight(3);
+
+  for (let y = -40; y < height; y += 40) {
+
+    line(
+      width / 2 - 240,
+      y + roadOffset % 40,
+      width / 2 - 90,
+      y + 40 + roadOffset % 40
+    );
+
+    line(
+      width / 2 + 240,
+      y + roadOffset % 40,
+      width / 2 + 90,
+      y + 40 + roadOffset % 40
+    );
+
+  }
+
+}
+
+// =========================
+// 목표 원
+// =========================
+
+function drawTarget() {
+
+  noFill();
+
+  stroke(0, 255, 180);
+
+  strokeWeight(6);
+
+  ellipse(width / 2, height - 150, 190, 190);
+
+}
+
+// =========================
+// UI
+// =========================
+
+function drawUI() {
+
+  noStroke();
+
+  fill(255);
+
+  textSize(30);
+
+  text("Score : " + score, 30, 50);
+
+  text("Combo : " + combo, 30, 90);
+
+}
+
+// =========================
+// 박자 생성
+// =========================
+
+function spawnByBeat() {
+
+  let currentBeat = floor(song.currentTime() / beatTime);
+
+  if (currentBeat > lastBeat) {
+
+    let amount = beatPattern[patternIndex];
+
+    if (amount == 1) {
+
+      makeNote(0);
+
+    }
+
+    // 연속 두 번
+    if (amount == 2) {
+
+      makeNote(-60);
+
+      makeNote(60);
+
+    }
+
+    patternIndex++;
+
+    if (patternIndex >= beatPattern.length) {
+
+      patternIndex = 0;
+
+    }
+
+    lastBeat = currentBeat;
+
+  }
+
+}
+
+// =========================
+// 노트 처리
+// =========================
+
+function updateNotes() {
+
+  for (let i = notes.length - 1; i >= 0; i--) {
+
+    let n = notes[i];
+
+    n.progress += n.speed;
+
+    n.y = map(n.progress, 0, 100, 50, height - 150);
+
+    let currentSize = map(n.progress, 0, 100, 30, 190);
+
+    let currentHeight = map(n.progress, 0, 100, 8, 190);
+
+    // 성공
+    if (n.hit == true) {
+
+      n.alpha -= 18;
+
+      noStroke();
+
+      fill(255, n.alpha);
+
+      ellipse(
+        width / 2 + n.xOffset,
+        n.y,
+        currentSize,
+        currentHeight
+      );
+
+      if (n.alpha <= 0) {
+
+        notes.splice(i, 1);
+
+      }
+
+      continue;
+
+    }
+
+    // 실패
+    if (n.missed == true) {
+
+      fill(255, 70, 70);
+
+    } else {
+
+      fill(255);
+
+    }
+
+    noStroke();
+
+    ellipse(
+      width / 2 + n.xOffset,
+      n.y,
+      currentSize,
+      currentHeight
+    );
+
+    // 지나감
+    if (n.progress > 120) {
+
+      notes.splice(i, 1);
+
+      combo = 0;
+
+    }
+
+  }
+
+}
+
+// =========================
+// 입력
+// =========================
+
+function keyPressed() {
+
+  if (key === " ") {
+
+    let success = false;
+
+    for (let i = 0; i < notes.length; i++) {
+
+      let n = notes[i];
+
+      let currentSize = map(
+        n.progress,
+        0,
+        100,
+        30,
+        190
+      );
+
+      if (
+        currentSize >= 145 &&
+        currentSize <= 215 &&
+        n.hit == false &&
+        n.missed == false
+      ) {
+
+        n.hit = true;
+
+        score += 100;
+
+        combo++;
+
+        success = true;
+
+        break;
+
+      }
+
+    }
+
+    // 실패
+    if (success == false) {
+
+      combo = 0;
+
+      if (notes.length > 0) {
+
+        let n = notes[0];
+
+        if (!n.hit && !n.missed) {
+
+          n.missed = true;
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+// =========================
+// 노트 생성
+// =========================
+
+function makeNote(offset) {
+
+  let newNote = {
+
+    progress: 0,
+
+    speed: 1.35,
+
+    y: 0,
+
+    alpha: 255,
+
+    hit: false,
+
+    missed: false,
+
+    xOffset: offset
+
+  };
+
+  notes.push(newNote);
+
+}
+
+// =========================
+// 화면 대응
+// =========================
+
+function windowResized() {
+
+  resizeCanvas(windowWidth, windowHeight);
+
+}
