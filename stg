@@ -31,7 +31,7 @@ let fairyAngle = 0;
 // 웅덩이 함정(보이지 않음) 관련 변수
 let puddles = [];
 let minigameData = {};
-let moveCooldown = 0; // 추가: 연타 후 돌진 방지용 쿨다운 타이머
+let moveCooldown = 0; 
 
 // =====================================
 // SETUP
@@ -89,7 +89,7 @@ function initGame() {
   };
 
   bloodDrops = [];
-  moveCooldown = 0; // 게임 시작 시 쿨다운 초기화
+  moveCooldown = 0; 
   
   generatePuddles();
 }
@@ -104,7 +104,6 @@ function generatePuddles() {
   for (let y = 1; y < rows - 1; y++) {
     for (let x = 1; x < cols - 1; x++) {
       if (maze[y][x] === 0) {
-        // 플레이어 시작 위치와 출구 근처에는 함정을 생성하지 않음
         if (dist(x, y, 1, 1) > 3 && dist(x, y, exitCell.x, exitCell.y) > 3) {
           emptyCells.push({ x: x, y: y });
         }
@@ -186,24 +185,33 @@ function draw() {
     textSize(65);
     text("GAME OVER", width / 2, height / 2 - 40);
     textSize(24);
-    text("R 키를 눌러 다시 시작", width / 2, height / 2 + 35);
+    text("마우스를 눌러 다음 스토리로 넘어가주세요", width / 2, height / 2 + 35);
     return;
   }
 
   if (state === "clear") {
-    background(10, 30, 10);
+    background(28, 95, 28);
+    drawMaze();
+    drawGardenDome();
+    drawPlayer();
+    drawFairy();
+
+    fill(10, 30, 10, 190);
+    rect(0, 0, width, height);
+
+    drawFairySpeechBubble();
+
     fill(100, 255, 170);
     textAlign(CENTER, CENTER);
     textSize(65);
     text("GAME CLEAR", width / 2, height / 2 - 40);
     textSize(24);
     fill(255);
-    text("R 키를 눌러 다시 시작", width / 2, height / 2 + 35);
+    text("마우스를 눌러 다음 스토리로 이동해주세요.", width / 2, height / 2 + 35);
     return;
   }
 
   // --- GAME & MINIGAME RENDERING ---
-  // 배경을 짙은 초록(벽 색깔)으로 설정하여 여백 처리
   background(28, 95, 28);
 
   drawMaze();
@@ -216,10 +224,40 @@ function draw() {
   drawPlayer();
   drawFairy();
   
-  // 웅덩이 미니게임 화면 그리기
   if (state === "minigame") {
     handleMinigame();
   }
+}
+
+// =====================================
+// 요정 클리어 말풍선
+// =====================================
+function drawFairySpeechBubble() {
+  let fx = player.x + 12 + sin(fairyAngle) * 3;
+  let fy = player.y - 6 + cos(fairyAngle) * 4;
+  
+  let msg = "히로야 드디어 코하쿠의\n정원을 탈출했어!";
+  
+  let bx = fx - 95;
+  let by = fy - 50; 
+  
+  push();
+  fill(255);
+  stroke(255, 220, 100); 
+  strokeWeight(3);
+  
+  triangle(fx - 4, fy - 4, bx + 25, by + 28, bx + 45, by + 28);
+  
+  rectMode(CENTER);
+  rect(bx, by, 180, 60, 15);
+  
+  noStroke();
+  fill(0);
+  textAlign(CENTER, CENTER);
+  textSize(15);
+  textStyle(BOLD);
+  text(msg, bx, by);
+  pop();
 }
 
 // =====================================
@@ -301,21 +339,40 @@ function carve(x, y) {
 }
 
 // =====================================
-// DRAW MAZE
+// DRAW MAZE (둥근 끝부분 업데이트 🌿)
 // =====================================
 function drawMaze() {
+  // 1. 길을 부드럽게 둥글게 그리기
+  fill(145, 110, 75);
+  noStroke();
+  
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
-      let px = x * tile;
-      let py = y * tile;
-
       if (maze[y][x] === 0) {
-        // 길(바닥)을 갈색으로 따로 칠해줌
-        fill(145, 110, 75);
-        noStroke();
-        rect(px, py, tile, tile);
-      } else {
-        // 벽 디테일(가시, 덩굴) 렌더링
+        let cx = x * tile + tile / 2;
+        let cy = y * tile + tile / 2;
+        
+        // 길의 중앙에 원을 그려서 막다른 길(끝부분)과 외곽 코너를 둥글게 만듭니다
+        ellipse(cx, cy, tile, tile);
+        
+        // 오른쪽으로 길이 이어지면 사각형으로 매끄럽게 연결
+        if (x < cols - 1 && maze[y][x+1] === 0) {
+          rect(cx, cy - tile / 2, tile + 1, tile);
+        }
+        // 아래쪽으로 길이 이어지면 사각형으로 매끄럽게 연결
+        if (y < rows - 1 && maze[y+1][x] === 0) {
+          rect(cx - tile / 2, cy, tile, tile + 1);
+        }
+      }
+    }
+  }
+
+  // 2. 벽의 디테일(가시, 덩굴) 그리기
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (maze[y][x] === 1) {
+        let px = x * tile;
+        let py = y * tile;
         let data = wallData[y][x];
 
         stroke(65, 40, 15);
@@ -382,7 +439,6 @@ function drawGardenDome() {
 // MOVE PLAYER
 // =====================================
 function movePlayer() {
-  // 추가: 미니게임 직후 0.5초 동안은 이동 입력을 받지 않음!
   if (millis() < moveCooldown) return;
 
   let speed = 7;
@@ -415,7 +471,6 @@ function movePlayer() {
       state = "clear";
     }
 
-    // 눈에 보이지 않는 웅덩이 함정 밟았을 때 처리!
     for (let i = puddles.length - 1; i >= 0; i--) {
       if (puddles[i].x === gx && puddles[i].y === gy) {
         state = "minigame";
@@ -504,11 +559,9 @@ function keyPressed() {
       if (minigameData.count >= minigameData.target) {
         state = "game"; 
         
-        // 추가: 안전을 위해 캐릭터를 현재 서 있는 타일의 정중앙으로 보정
         player.x = floor(player.x / tile) * tile + tile / 2;
         player.y = floor(player.y / tile) * tile + tile / 2;
         
-        // 추가: 0.5초(500ms) 동안 움직임 쿨다운 적용
         moveCooldown = millis() + 500;
       }
     }
