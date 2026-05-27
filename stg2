@@ -1,0 +1,677 @@
+let player;
+let fairy;
+let obstacles = [];
+let treasureChest = null;
+let magicKey = null;
+let gameOver = false;
+let score = 0;
+let groundY;
+
+// 게임 상태 관리: START_SCREEN, INTRO, PLAYING, STORY_CHEST, STORY_KEY, STORY_DIALOGUE, STAGE_CLEAR, WAIT_NEXT_STORY, NEXT_STORY
+let gameState = "START_SCREEN";
+
+// 요정 대사 시스템
+let fairyMsg = "";
+let fairyMsgStart = 0;
+let fairyMsgDuration = 0;
+
+// 대사 트리거 추적
+let shownStartMsg = false;
+let shownScore13Msg = false;
+let shownScore20Msg = false;
+
+// 타이머 변수들
+let introStartTime = 0;
+let dialogueStartTime = 0;
+let stageClearStartTime = 0;
+
+// Stage Clear 연출용
+let clearAlpha = 0;
+
+function setup() {
+    createCanvas(windowWidth, windowHeight);
+    groundY = height - 50;
+    player = new Player();
+    fairy = new Fairy(player);
+}
+
+function draw() {
+    // 1. 클릭 대기 화면
+    if (gameState === "START_SCREEN") {
+        drawStartScreen();
+        return;
+    }
+
+    // 2. 다음 스토리 (최종 전환) 화면
+    if (gameState === "NEXT_STORY") {
+        drawNextStory();
+        return;
+    }
+
+    // 기본 동굴 배경 렌더링
+    background(25, 20, 30);
+    fill(10);
+    noStroke();
+    rect(0, 0, width, 40);
+    rect(0, groundY, width, 50);
+
+    // Stage Clear & 다음 스토리 대기 화면
+    if (gameState === "STAGE_CLEAR" || gameState === "WAIT_NEXT_STORY") {
+        // 배경에 캐릭터와 요정을 그려두고 그 위에 클리어 효과 덮기
+        player.show();
+        fairy.update();
+        fairy.show();
+        drawStageClear();
+        return;
+    }
+
+    if (gameOver) {
+        player.show();
+        drawMessage("GAME OVER", color(255, 50, 50));
+        return;
+    }
+
+    // 3. 인트로 중에는 조작 불가, 캐릭터는 정지 상태로 유지
+    if (gameState !== "INTRO") {
+        if (keyIsDown(65) || keyIsDown(97)) player.move(-1);
+        else if (keyIsDown(68) || keyIsDown(100)) player.move(1);
+        else player.move(0);
+        player.update();
+    } else {
+        player.move(0);
+        player.update();
+    }
+    
+    player.show();
+    fairy.update();
+    fairy.show();
+
+    // 4. 인트로 시퀀스 (5초 카운트다운)
+    if (gameState === "INTRO") {
+        drawIntroScreen();
+        return;
+    }
+
+    // 5. 실제 게임 로직 분기
+    if (gameState === "PLAYING") {
+        updatePlayingMode();
+    } else {
+        updateStoryMode();
+    }
+
+    drawTimedFairyMsg();
+    drawUI();
+}
+
+// ── 마우스 클릭 이벤트 제어 ──
+function mousePressed() {
+    if (gameState === "START_SCREEN") {
+        gameState = "INTRO";
+        introStartTime = millis();
+    } else if (gameState === "WAIT_NEXT_STORY") {
+        // 스토리 연출이 모두 끝난 후 마우스 클릭 시 다음 단계로 이동
+        gameState = "NEXT_STORY";
+    }
+}
+
+// ── 시작 & 인트로 화면 ──
+function drawStartScreen() {
+    background(25, 20, 30);
+    fill(10); noStroke();
+    rect(0, 0, width, 40);
+    rect(0, groundY, width, 50);
+    
+    player.show();
+    fairy.show();
+
+    fill(0, 0, 0, 160);
+    rect(0, 0, width, height);
+
+    fill(255, 215, 0);
+    textAlign(CENTER, CENTER);
+    textSize(70);
+    textStyle(BOLD);
+    text("동굴 탐험: 마법사의 열쇠", width / 2, height / 2 - 40);
+
+    let blinkAlpha = sin(frameCount * 0.1) * 100 + 155;
+    fill(255, 255, 255, blinkAlpha);
+    textSize(28);
+    textStyle(NORMAL);
+    text("화면을 마우스로 클릭하여 시작하세요", width / 2, height / 2 + 50);
+}
+
+function drawIntroScreen() {
+    let elapsed = millis() - introStartTime;
+    let left = ceil(5 - (elapsed / 1000));
+    if (left < 1) left = 1;
+
+    fill(0, 0, 0, 180);
+    rect(0, 0, width, height);
+
+    // 메인 안내문
+    fill(255);
+    textAlign(CENTER, CENTER);
+    textSize(45);
+    textStyle(BOLD);
+    text("마법사의 성에 들어가려면 열쇠가 필요합니다.", width / 2, height / 2 - 100);
+    textStyle(NORMAL);
+
+    // 5초 카운트다운
+    textSize(90);
+    fill(255, 215, 0);
+    text(left, width / 2, height / 2 + 10);
+
+    // 조작법 (작은 글씨)
+    textSize(18);
+    fill(200, 200, 200);
+    text("WASD 키를 활용해 좌우 이동 및 엎드리기/일어서기가 가능합니다.\n스페이스 바를 눌러 점프할 수 있습니다. 장애물들을 피해 열쇠를 획득해주세요.", width / 2, height / 2 + 120);
+
+    // 요정의 인트로 대사 (넓은 말풍선)
+    push();
+    let bx = fairy.x + 30;
+    let by = fairy.y - 110;
+    fill(255, 255, 255, 240);
+    stroke(255, 200, 0);
+    strokeWeight(2);
+    rect(bx, by, 480, 80, 15);
+    
+    noStroke();
+    fill(255, 255, 255, 240);
+    triangle(bx + 20, by + 80, bx + 35, by + 80, bx + 28, by + 95);
+    
+    fill(0);
+    textSize(20);
+    textAlign(CENTER, CENTER);
+    textStyle(BOLD);
+    text("이 동굴 어딘가에 마법사가 숨긴 황금 열쇠가 숨겨져 있대.\n어서 찾으러 가자!", bx + 240, by + 40);
+    pop();
+
+    // 5초 경과 시 게임 플레이로 자동 전환
+    if (elapsed > 5000) {
+        gameState = "PLAYING";
+        showFairyMsg("위험한 게 많으니 조심해야해!", 2000);
+        shownStartMsg = true;
+    }
+}
+
+function drawNextStory() {
+    background(10, 5, 15);
+    fill(255);
+    textAlign(CENTER, CENTER);
+    textSize(40);
+    let blinkAlpha = sin(frameCount * 0.05) * 100 + 155;
+    fill(255, 255, 255, blinkAlpha);
+    text("다음 이야기가 시작됩니다...", width/2, height/2);
+}
+
+// ── 요정 대사 유틸 ──
+function showFairyMsg(msg, duration) {
+    fairyMsg = msg;
+    fairyMsgStart = millis();
+    fairyMsgDuration = duration;
+}
+
+function drawTimedFairyMsg() {
+    if (fairyMsg === "") return;
+    if (millis() - fairyMsgStart > fairyMsgDuration) {
+        fairyMsg = "";
+        return;
+    }
+
+    let elapsed = millis() - fairyMsgStart;
+    let alpha = 255;
+    if (elapsed > fairyMsgDuration - 400) {
+        alpha = map(elapsed, fairyMsgDuration - 400, fairyMsgDuration, 255, 0);
+    }
+
+    push();
+    let bx = fairy.x + 25;
+    let by = fairy.y - 70;
+    let tw = textWidth(fairyMsg) * 1.1 + 40;
+    if (tw < 280) tw = 280;
+
+    fill(255, 255, 255, alpha * 0.9);
+    stroke(255, 200, 0, alpha);
+    strokeWeight(2);
+    rect(bx, by, tw, 50, 10);
+
+    noStroke();
+    fill(255, 255, 255, alpha * 0.9);
+    triangle(bx + 15, by + 50, bx + 25, by + 50, bx + 20, by + 60);
+
+    fill(0, 0, 0, alpha);
+    textSize(20);
+    textStyle(NORMAL);
+    textAlign(CENTER, CENTER);
+    text(fairyMsg, bx + tw / 2, by + 25);
+    pop();
+}
+
+// ── 플레이 모드 ──
+function updatePlayingMode() {
+    if (score >= 13 && !shownScore13Msg) {
+        showFairyMsg("거의 다 왔어! 힘내!", 2000);
+        shownScore13Msg = true;
+    }
+
+    if (score >= 20) {
+        if (obstacles.length === 0) {
+            gameState = "STORY_CHEST";
+            treasureChest = new TreasureChest();
+            if (!shownScore20Msg) {
+                showFairyMsg("보물상자다! 열쇠를 가지러 가자!", 2000);
+                shownScore20Msg = true;
+            }
+        }
+    } else {
+        if (frameCount % 75 === 0) {
+            let type = floor(random(3));
+            if (type === 0) obstacles.push(new Stone());
+            else if (type === 1) obstacles.push(new Stalactite());
+            else obstacles.push(new Bat());
+        }
+    }
+
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        obstacles[i].update();
+        obstacles[i].show();
+        if (obstacles[i].hits(player)) gameOver = true;
+        if (obstacles[i].offscreen()) {
+            obstacles.splice(i, 1);
+            score++;
+        }
+    }
+}
+
+// ── 스토리 모드 ──
+function updateStoryMode() {
+    if (treasureChest) {
+        treasureChest.update();
+        treasureChest.show();
+
+        if (gameState === "STORY_CHEST" && treasureChest.hits(player)) {
+            treasureChest.open();
+            magicKey = new MagicKey(treasureChest.x, treasureChest.y - 20);
+            gameState = "STORY_KEY";
+        }
+    }
+
+    if (magicKey) {
+        magicKey.update();
+        magicKey.show();
+
+        if (gameState === "STORY_KEY" && magicKey.hits(player)) {
+            magicKey.collect();
+            gameState = "STORY_DIALOGUE";
+            dialogueStartTime = millis();
+        }
+    }
+
+    if (gameState === "STORY_DIALOGUE") {
+        drawFairyDialogue("좋아! 이제 마법사의 성으로 가자!");
+
+        // 5초 대사 후 Stage Clear 화면으로 전환
+        if (millis() - dialogueStartTime > 5000) {
+            gameState = "STAGE_CLEAR";
+            clearAlpha = 0;
+            stageClearStartTime = millis();
+        }
+    }
+}
+
+// ── Stage Clear & 다음 스토리 전환 대기 화면 ──
+function drawStageClear() {
+    if (clearAlpha < 255) clearAlpha += 3;
+    let a = constrain(clearAlpha, 0, 255);
+
+    fill(0, 0, 0, a * 0.85);
+    rect(0, 0, width, height);
+
+    // 파티클
+    for (let i = 0; i < 40; i++) {
+        let px = noise(i * 100 + frameCount * 0.005) * width;
+        let py = noise(i * 200 + frameCount * 0.008) * height;
+        let sz = noise(i * 300 + frameCount * 0.01) * 6 + 2;
+        let twinkle = sin(frameCount * 0.1 + i) * 60 + 195;
+        fill(255, 215, 100, twinkle * (a / 255));
+        noStroke();
+        circle(px, py, sz);
+    }
+
+    let bounce = sin(frameCount * 0.06) * 8;
+    textAlign(CENTER, CENTER);
+
+    drawingContext.shadowBlur = 30;
+    drawingContext.shadowColor = 'rgba(255, 200, 0, 0.8)';
+    fill(255, 215, 0, a);
+    textSize(90);
+    textStyle(BOLD);
+    text("Stage Clear!", width / 2, height / 2 - 60 + bounce);
+    drawingContext.shadowBlur = 0;
+
+    let subAlpha = constrain(map(clearAlpha, 100, 255, 0, 255), 0, 255);
+    fill(230, 230, 255, subAlpha);
+    textSize(28);
+    textStyle(NORMAL);
+    text("이제 마법사의 성으로 가자. 곧 집에 갈 수 있을거야!", width / 2, height / 2 + 40);
+
+    // 클리어 화면이 5초 지속된 후, 마우스 클릭 모드로 전환
+    if (gameState === "STAGE_CLEAR") {
+        let blinkAlpha = sin(frameCount * 0.08) * 80 + 175;
+        fill(200, 200, 200, min(blinkAlpha, subAlpha));
+        textSize(20);
+        text("Press 'R' to Restart", width / 2, height / 2 + 110);
+
+        if (millis() - stageClearStartTime > 5000) {
+            gameState = "WAIT_NEXT_STORY";
+        }
+    } else if (gameState === "WAIT_NEXT_STORY") {
+        // 스토리 연출이 완전히 끝남. 이후부터는 재시작(R) 불가, 마우스 클릭 요구.
+        let blinkAlpha = sin(frameCount * 0.08) * 80 + 175;
+        fill(100, 255, 150, min(blinkAlpha, subAlpha));
+        textSize(26);
+        textStyle(BOLD);
+        text("▶ 마우스를 클릭하여 다음 이야기로 이동하세요 ◀", width / 2, height / 2 + 110);
+        textStyle(NORMAL);
+    }
+}
+
+function drawUI() {
+    if (score >= 20 && gameState !== "STORY_DIALOGUE" && gameState !== "STAGE_CLEAR" && gameState !== "WAIT_NEXT_STORY" && gameState !== "NEXT_STORY") {
+        fill(255, 215, 0);
+        textAlign(LEFT, TOP);
+        textSize(24);
+        text("보물 상자가 나타났어! 확인하러 가자!", 20, 55);
+    }
+
+    if(gameState !== "START_SCREEN" && gameState !== "NEXT_STORY") {
+        fill(150, 150, 150, 150);
+        textAlign(RIGHT, BOTTOM);
+        textSize(16);
+        textStyle(NORMAL);
+        text("전체화면 전환: 'F' 키  |  점프: Space  |  조작: W, A, S, D", width - 20, height - 15);
+    }
+}
+
+function drawFairyDialogue(msg) {
+    push();
+    let bx = fairy.x + 25;
+    let by = fairy.y - 70;
+
+    fill(255, 255, 255, 230);
+    stroke(255, 200, 0);
+    strokeWeight(2);
+    rect(bx, by, 320, 50, 10);
+
+    noStroke();
+    fill(255, 255, 255, 230);
+    triangle(bx + 15, by + 50, bx + 25, by + 50, bx + 20, by + 60);
+
+    fill(0);
+    textSize(20);
+    textStyle(NORMAL);
+    textAlign(CENTER, CENTER);
+    text(msg, bx + 160, by + 25);
+    pop();
+}
+
+function drawMessage(msg, col) {
+    fill(0, 0, 0, 180);
+    rect(0, 0, width, height);
+    fill(col);
+    textSize(80);
+    textStyle(BOLD);
+    textAlign(CENTER, CENTER);
+    text(msg, width / 2, height / 2 - 20);
+    textStyle(NORMAL);
+    textSize(24);
+    fill(255);
+    text("Press 'R' to Restart", width / 2, height / 2 + 50);
+}
+
+function keyPressed() {
+    if (key === ' ' && !player.isJumping && gameState !== "INTRO") player.jump();
+    if ((key === 's' || key === 'S') && gameState !== "INTRO") player.duck();
+    if ((key === 'w' || key === 'W') && gameState !== "INTRO") player.stand();
+
+    // WAIT_NEXT_STORY 또는 NEXT_STORY 상태일 때는 재시작(R) 불가 처리
+    if ((gameOver || gameState === "STORY_DIALOGUE" || gameState === "STAGE_CLEAR") && (key === 'r' || key === 'R')) {
+        resetGame();
+    }
+    
+    if (key === 'f' || key === 'F') fullscreen(!fullscreen());
+}
+
+function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+    groundY = height - 50;
+}
+
+function resetGame() {
+    gameOver = false;
+    score = 0;
+    obstacles = [];
+    treasureChest = null;
+    magicKey = null;
+    
+    // 재시작 시에는 긴 인트로를 생략하고 바로 플레이 모드로 시작
+    gameState = "PLAYING"; 
+    
+    clearAlpha = 0;
+    dialogueStartTime = 0;
+    stageClearStartTime = 0;
+    fairyMsg = "";
+    shownStartMsg = false;
+    shownScore13Msg = false;
+    shownScore20Msg = false;
+    
+    player = new Player();
+    fairy = new Fairy(player);
+    showFairyMsg("위험한 게 많으니 조심해야해!", 2000);
+    shownStartMsg = true;
+}
+
+// ══════════════════════════════════════
+//  클래스 정의 (Player, Fairy, TreasureChest, MagicKey, Stone, Stalactite, Bat)
+// ══════════════════════════════════════
+
+class Player {
+    constructor() {
+        this.w = 40; this.h = 95;
+        this.x = 100; this.y = groundY - this.h;
+        this.vy = 0; this.vx = 0;
+        this.gravity = 0.7;
+        this.isJumping = false;
+        this.isDucking = false;
+        this.speed = 8.5;
+    }
+    jump() { this.vy = -16; this.isJumping = true; this.stand(); }
+    duck() { if (!this.isJumping) { this.h = 45; this.y = groundY - this.h; this.isDucking = true; } }
+    stand() { this.h = 95; this.isDucking = false; }
+    move(dir) { this.vx = dir * this.speed; }
+    update() {
+        this.vy += this.gravity;
+        this.y += this.vy;
+        this.x += this.vx;
+        this.x = constrain(this.x, 0, width - this.w);
+        if (this.y >= groundY - this.h) { this.y = groundY - this.h; this.vy = 0; this.isJumping = false; }
+    }
+    show() {
+        push();
+        noStroke();
+        fill(255, 150, 180);
+        rect(this.x, this.y + (this.isDucking ? 15 : 35), this.w, this.h - (this.isDucking ? 15 : 35), 8);
+        fill(255, 220, 185);
+        let headY = this.y + (this.isDucking ? 8 : 15);
+        circle(this.x + this.w / 2, headY, 34);
+        fill(101, 67, 33);
+        arc(this.x + this.w / 2, headY - 6, 40, 34, PI, TWO_PI);
+        rect(this.x + this.w / 2 - 20, headY - 6, 7, 34, 3);
+        rect(this.x + this.w / 2 + 13, headY - 6, 7, 34, 3);
+        pop();
+    }
+}
+
+class Fairy {
+    constructor(p) { this.player = p; this.x = p.x - 40; this.y = p.y; this.angle = 0; }
+    update() {
+        let targetX = this.player.x - 45;
+        let targetY = this.player.y - 20 + sin(this.angle) * 15;
+        this.x = lerp(this.x, targetX, 0.1);
+        this.y = lerp(this.y, targetY, 0.1);
+        this.angle += 0.1;
+    }
+    show() {
+        push();
+        noStroke();
+        fill(200, 255, 255, 150);
+        ellipse(this.x - 11, this.y, 20, 14);
+        ellipse(this.x + 11, this.y, 20, 14);
+        fill(255, 255, 150);
+        drawingContext.shadowBlur = 15;
+        drawingContext.shadowColor = 'yellow';
+        circle(this.x, this.y, 24);
+        pop();
+    }
+}
+
+class TreasureChest {
+    constructor() {
+        this.w = 70; this.h = 55;
+        this.x = width + 70;
+        this.y = groundY - this.h;
+        this.targetX = width / 2;
+        this.isOpen = false;
+    }
+    update() {
+        if (this.x > this.targetX) this.x -= 3;
+    }
+    show() {
+        push();
+        stroke(50, 30, 0);
+        strokeWeight(2);
+        fill(100, 60, 20);
+        rect(this.x - this.w/2, this.y, this.w, this.h, 6);
+        if (this.isOpen) {
+            fill(255, 200, 0);
+            rect(this.x - this.w/2, this.y - 7, this.w, 14, 3);
+        } else {
+            fill(150, 100, 50);
+            rect(this.x - this.w/2, this.y, this.w, 14, 6);
+        }
+        fill(255, 215, 0);
+        rect(this.x - 7, this.y + 20, 14, 14, 3);
+        pop();
+    }
+    open() { this.isOpen = true; }
+    hits(p) { return dist(this.x, this.y + this.h/2, p.x + p.w/2, p.y + p.h/2) < 55; }
+}
+
+class MagicKey {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.isRising = true;
+        this.isCollected = false;
+        this.startY = y;
+    }
+    update() {
+        if (this.isRising && !this.isCollected) {
+            this.y -= 3;
+            if (this.y < this.startY - 140) {
+                this.isRising = false;
+            }
+        } else if (!this.isCollected) {
+            this.y = (this.startY - 140) + sin(frameCount * 0.08) * 10;
+        }
+    }
+    show() {
+        if (this.isCollected) return;
+        push();
+        translate(this.x, this.y);
+        noStroke();
+        drawingContext.shadowBlur = 30;
+        drawingContext.shadowColor = 'rgba(255, 215, 0, 1)';
+        fill(255, 215, 0);
+        circle(0, -20, 28);
+        fill(25, 20, 30);
+        circle(0, -20, 10);
+        fill(255, 215, 0);
+        rect(-4, -6, 8, 35);
+        rect(4, 7, 10, 5);
+        rect(4, 18, 10, 5);
+        pop();
+    }
+    collect() { this.isCollected = true; }
+    hits(p) { return !this.isCollected && !this.isRising && dist(this.x, this.y, p.x + p.w/2, p.y + p.h/2) < 50; }
+}
+
+class Stone {
+    constructor() {
+        this.r = random(45, 90);
+        this.x = width;
+        this.y = groundY - this.r/2;
+        this.speed = random(4, 13);
+    }
+    update() { this.x -= this.speed; }
+    show() { fill(120); noStroke(); circle(this.x, this.y, this.r); }
+    hits(p) { return dist(this.x, this.y, p.x + p.w/2, p.y + p.h/2) < (this.r/2 + p.w/2); }
+    offscreen() { return this.x < -this.r; }
+}
+
+class Stalactite {
+    constructor() {
+        this.w = 30;
+        this.h = 70;
+        this.x = random(width * 0.2, width);
+        this.y = 40;
+        this.speed = random(6, 10);
+    }
+    update() { this.y += this.speed; this.x -= 2; }
+    show() { fill(180); noStroke(); triangle(this.x, this.y, this.x + this.w, this.y, this.x + this.w / 2, this.y + this.h); }
+    hits(p) { return (p.x < this.x + this.w && p.x + p.w > this.x && p.y < this.y + this.h && p.y + p.h > this.y); }
+    offscreen() { return this.y > height; }
+}
+
+class Bat {
+    constructor() {
+        this.w = 55;
+        this.h = 35;
+        this.x = width;
+        this.y = groundY - 85 + random(-50, 40);
+        this.speed = random(3.4, 6.8);
+        this.a = 0;
+    }
+    update() {
+        this.x -= this.speed;
+        this.y += sin(this.a) * 3.5;
+        this.a += 0.25;
+    }
+    show() {
+        push();
+        translate(this.x, this.y);
+        drawingContext.shadowBlur = 20;
+        drawingContext.shadowColor = 'rgba(0, 255, 255, 0.8)';
+        fill(30, 0, 50);
+        noStroke();
+        ellipse(0, 0, this.w * 0.4, this.h);
+        fill(40, 10, 80);
+        beginShape();
+        vertex(-7, 0); vertex(-35, -20); vertex(-20, 7);
+        endShape(CLOSE);
+        beginShape();
+        vertex(7, 0); vertex(35, -20); vertex(20, 7);
+        endShape(CLOSE);
+        drawingContext.shadowBlur = 10;
+        drawingContext.shadowColor = 'white';
+        fill(255);
+        circle(-6, -3, 5);
+        circle(6, -3, 5);
+        pop();
+    }
+    hits(p) {
+        return (p.x < this.x + this.w/2 && p.x + p.w > this.x - this.w/2 &&
+                p.y < this.y + this.h/2 && p.y + p.h > this.y - this.h/2);
+    }
+    offscreen() { return this.x < -100; }
+}
